@@ -85,11 +85,11 @@ async def simular_negocio(inputs: InputsSimulador):
     inversion_total = sum(inputs.inversion.dict().values())
     gastos_mes = sum(inputs.gastos_fijos.dict().values())
     
-    viable_capital = inversion_total <= 5000
+    viable_capital = inversion_total <= 10000
     
     # Capital de Trabajo / Fondo de Maniobra
     fondo_maniobra = gastos_mes * 2
-    capital_restante = 5000 - inversion_total
+    capital_restante = 10000 - inversion_total
     cubre_fondo = capital_restante >= fondo_maniobra
     falta_fondo = round(fondo_maniobra - capital_restante, 2) if not cubre_fondo else 0
     
