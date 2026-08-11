@@ -1,5 +1,4 @@
 fastapi
 uvicorn
 pydantic
-numpy
-openai
+google-generativeai
