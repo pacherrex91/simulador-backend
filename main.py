@@ -132,7 +132,9 @@ async def obtener_consejo(datos: dict):
     try:
         # Configuramos la llave secreta de Gemini
         genai.configure(api_key=os.environ.get("GEMINI_API_KEY"))
-        modelo = genai.GenerativeModel('gemini-1.5-flash')
+        
+        # CAMBIO CLAVE: Usamos el modelo 'gemini-pro' que es el más universal y estable
+        modelo = genai.GenerativeModel('gemini-pro')
         
         rol = datos.get("rol")
         metricas = datos.get("metricas", {})
