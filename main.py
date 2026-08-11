@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import numpy as np
 
-app = FastAPI(title="Simulador de Negocios - Método 5000 Soles")
+app = FastAPI(title="Simulador de Negocios - Método 10000 Soles")
 
 app.add_middleware(
     CORSMiddleware,
