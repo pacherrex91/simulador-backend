@@ -126,15 +126,15 @@ def simular_negocio(datos: DatosSimulacion):
         }
     }
 
-# Endpoint Consejero IA (Versión Google Gemini)
+# Endpoint Consejero IA (Versión Google Gemini 3.5 Flash)
 @app.post("/consejero")
 async def obtener_consejo(datos: dict):
     try:
         # Configuramos la llave secreta de Gemini
         genai.configure(api_key=os.environ.get("GEMINI_API_KEY"))
         
-        # CAMBIO CLAVE: Usamos el modelo 'gemini-pro' que es el más universal y estable
-        modelo = genai.GenerativeModel('gemini-pro')
+        # LA SOLUCIÓN: Llamamos al modelo moderno que sí está activo en tu cuenta
+        modelo = genai.GenerativeModel('gemini-3.5-flash')
         
         rol = datos.get("rol")
         metricas = datos.get("metricas", {})
