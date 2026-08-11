@@ -1,140 +1,166 @@
 from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-import numpy as np
+from fastapi.middleware.cors import CORSMiddleware
+import os
+from openai import OpenAI
 
-app = FastAPI(title="Simulador de Negocios - Método 10000 Soles")
+app = FastAPI()
 
+# Configuración para permitir que tu página web se comunique con este servidor
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], 
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# --- MODELOS DE DATOS ---
-class InversionInicial(BaseModel):
+# Estructura de datos que recibe el simulador
+class Inversion(BaseModel):
     insumos: float
     equipos: float
     empaques: float
     permisos: float
     otros: float
 
-class GastosMensuales(BaseModel):
+class GastosFijos(BaseModel):
     marketing: float
     logistica: float
     sueldo_emprendedor: float
     impuestos: float
     otros: float
 
-class ProyeccionVentas(BaseModel):
+class Ventas(BaseModel):
     pesimista: int
     base: int
     optimista: int
     crecimiento_mensual: float
 
-class InputsSimulador(BaseModel):
+class DatosSimulacion(BaseModel):
     nombre_idea: str
     sector: str
     descripcion: str
-    inversion: InversionInicial
+    inversion: Inversion
     precio_venta: float
     costo_directo: float
-    gastos_fijos: GastosMensuales
-    ventas: ProyeccionVentas
+    gastos_fijos: GastosFijos
+    ventas: Ventas
 
-# --- MOTOR MATEMÁTICO ---
-def calcular_flujo(inputs: InputsSimulador, ventas_iniciales: int, meses: int = 12) -> dict:
-    inv_total = sum(inputs.inversion.dict().values())
-    gastos_totales_mes = sum(inputs.gastos_fijos.dict().values())
-    precio = inputs.precio_venta
-    costo_dir = inputs.costo_directo
-    crecimiento = inputs.ventas.crecimiento_mensual / 100.0
-    
-    ingresos = [0.0] * meses
-    costos = [0.0] * meses
-    caja = [0.0] * meses
-    ventas_proyectadas = [0] * meses
-    
-    caja_acumulada = -inv_total
-    
-    for i in range(meses):
-        # Aplicar crecimiento mensual
-        ventas_mes = int(ventas_iniciales * ((1 + crecimiento) ** i))
-        ventas_proyectadas[i] = ventas_mes
-        
-        ingreso_mes = ventas_mes * precio
-        costo_mes = (ventas_mes * costo_dir) + gastos_totales_mes
-        
-        caja_acumulada += (ingreso_mes - costo_mes)
-        
-        ingresos[i] = round(ingreso_mes, 2)
-        costos[i] = round(costo_mes, 2)
-        caja[i] = round(caja_acumulada, 2)
-        
-    return {
-        "ventas_mes_a_mes": ventas_proyectadas,
-        "caja_mes_a_mes": caja,
-        "mes_recuperacion": next((i + 1 for i, v in enumerate(caja) if v >= 0), "No recupera en Año 1")
-    }
-
+# Endpoint principal: El motor financiero
 @app.post("/simular")
-async def simular_negocio(inputs: InputsSimulador):
-    # 1. Validaciones y Métricas Clave
-    inversion_total = sum(inputs.inversion.dict().values())
-    gastos_mes = sum(inputs.gastos_fijos.dict().values())
+def simular_negocio(datos: DatosSimulacion):
+    inversion_total = sum([
+        datos.inversion.insumos,
+        datos.inversion.equipos,
+        datos.inversion.empaques,
+        datos.inversion.permisos,
+        datos.inversion.otros
+    ])
     
-    viable_capital = inversion_total <= 10000
+    gastos_fijos_mes = sum([
+        datos.gastos_fijos.marketing,
+        datos.gastos_fijos.logistica,
+        datos.gastos_fijos.sueldo_emprendedor,
+        datos.gastos_fijos.impuestos,
+        datos.gastos_fijos.otros
+    ])
     
-    # Capital de Trabajo / Fondo de Maniobra
-    fondo_maniobra = gastos_mes * 2
+    margen_unitario = datos.precio_venta - datos.costo_directo
+    
+    # Prevención de error matemático si el costo es mayor o igual al precio
+    if margen_unitario <= 0:
+        punto_equilibrio = 999999 
+    else:
+        punto_equilibrio = int(gastos_fijos_mes / margen_unitario) + 1
+        
     capital_restante = 10000 - inversion_total
-    cubre_fondo = capital_restante >= fondo_maniobra
-    falta_fondo = round(fondo_maniobra - capital_restante, 2) if not cubre_fondo else 0
+    fondo_maniobra_req = gastos_fijos_mes * 2
     
-    # CAC (Costo de Adquisición de Clientes)
-    cac = round(inputs.gastos_fijos.marketing / inputs.ventas.base, 2) if inputs.ventas.base > 0 else 0
-    
-    # 2. Escenario Base
-    base = calcular_flujo(inputs, inputs.ventas.base)
-    
-    # 3. Simulación Monte Carlo (Riesgo)
-    iteraciones = 1000
-    # Usamos los 3 escenarios del usuario para la distribución estadística
-    ventas_mc = np.random.triangular(
-        inputs.ventas.pesimista, 
-        inputs.ventas.base, 
-        inputs.ventas.optimista, 
-        iteraciones
-    )
-    
-    fracasos = 0
-    caja_promedio_final = 0
-    
-    for i in range(iteraciones):
-        res = calcular_flujo(inputs, int(ventas_mc[i]))
-        caja_fin_anio = res["caja_mes_a_mes"][-1]
-        caja_promedio_final += caja_fin_anio
-        if caja_fin_anio < 0:
-            fracasos += 1
+    def proyectar_escenario(ventas_iniciales, crecimiento):
+        caja_acumulada = -inversion_total
+        meses = []
+        mes_recuperacion = "No recupera en Año 1"
+        
+        for mes in range(1, 13):
+            ventas_mes = ventas_iniciales * ((1 + (crecimiento/100)) ** (mes - 1))
+            ingresos = ventas_mes * datos.precio_venta
+            costos_variables = ventas_mes * datos.costo_directo
+            utilidad_neta = ingresos - costos_variables - gastos_fijos_mes
+            caja_acumulada += utilidad_neta
+            meses.append(round(caja_acumulada, 2))
             
-    prob_fracaso = round((fracasos / iteraciones) * 100, 2)
-    ganancia_promedio = round(caja_promedio_final / iteraciones, 2)
-
+            if caja_acumulada >= 0 and mes_recuperacion == "No recupera en Año 1":
+                mes_recuperacion = mes
+                
+        return {
+            "caja_mes_a_mes": meses,
+            "caja_final": round(caja_acumulada, 2),
+            "mes_recuperacion": mes_recuperacion
+        }
+        
+    escenario_pesimista = proyectar_escenario(datos.ventas.pesimista, 0)
+    escenario_base = proyectar_escenario(datos.ventas.base, datos.ventas.crecimiento_mensual)
+    escenario_optimista = proyectar_escenario(datos.ventas.optimista, datos.ventas.crecimiento_mensual * 1.5)
+    
+    prob_perdida = 0
+    if escenario_pesimista["caja_final"] < 0: prob_perdida += 40
+    if escenario_base["caja_final"] < 0: prob_perdida += 50
+    if punto_equilibrio > datos.ventas.base: prob_perdida += 10
+    
     return {
         "metricas": {
             "inversion_total": inversion_total,
-            "es_viable_5k": viable_capital,
-            "fondo_maniobra_req": fondo_maniobra,
-            "cubre_fondo": cubre_fondo,
-            "falta_fondo": falta_fondo,
-            "cac_estimado": cac,
-            "gastos_fijos_mes": gastos_mes
+            "gastos_fijos_mes": gastos_fijos_mes,
+            "margen_unitario": margen_unitario,
+            "punto_equilibrio": punto_equilibrio,
+            "fondo_maniobra_req": fondo_maniobra_req,
+            "cubre_fondo": capital_restante >= fondo_maniobra_req,
+            "falta_fondo": max(0, fondo_maniobra_req - capital_restante)
         },
-        "base": base,
+        "pesimista": escenario_pesimista,
+        "base": escenario_base,
+        "optimista": escenario_optimista,
         "riesgo": {
-            "probabilidad_perdida": prob_fracaso,
-            "ganancia_promedio_anio": ganancia_promedio
+            "probabilidad_perdida": min(100, prob_perdida),
+            "ganancia_promedio_anio": round((escenario_pesimista["caja_final"] + escenario_base["caja_final"] + escenario_optimista["caja_final"]) / 3, 2)
         }
     }
+
+# Nuevo Endpoint: El Consejero de Inteligencia Artificial (DeepSeek)
+@app.post("/consejero")
+async def obtener_consejo(datos: dict):
+    try:
+        # Iniciamos el cliente de IA apuntando a la API de DeepSeek
+        client = OpenAI(
+            api_key=os.environ.get("DEEPSEEK_API_KEY"),
+            base_url="https://api.deepseek.com"
+        )
+        
+        rol = datos.get("rol")
+        metricas = datos.get("metricas", {})
+        
+        # Construimos el contexto que le daremos a la IA
+        prompt = f"Analiza este proyecto: {datos.get('idea')} (Sector: {datos.get('sector')}).\n"
+        prompt += f"Ventas necesarias para punto de equilibrio: {metricas.get('punto_equilibrio', 'N/A')}.\n"
+        prompt += f"Dinero faltante para reserva de emergencia: S/ {metricas.get('falta_fondo', 'N/A')}.\n\n"
+        
+        # Definimos el comportamiento según el botón que se presionó
+        if rol == "auditor":
+            prompt += "Actúa como un auditor financiero estricto. Analiza el riesgo de este negocio y dame 3 consejos crudos, directos y prácticos para reducir costos o mejorar el punto de equilibrio."
+        elif rol == "marketing":
+            prompt += "Actúa como un director de marketing. Toma los datos de esta simulación y genérame textos promocionales (copy) estructurados, persuasivos y listos para copiar y pegar directamente en WhatsApp y Facebook."
+        elif rol == "operaciones":
+            prompt += "Actúa como un asesor operativo experimentado. Detecta puntos ciegos en la logística de este negocio y dame recomendaciones para optimizar el tiempo y los recursos."
+            
+        # Hacemos la llamada al modelo de DeepSeek
+        response = client.chat.completions.create(
+            model="deepseek-chat",
+            messages=[
+                {"role": "system", "content": "Eres un experto asesor de negocios. Responde de manera clara, directa y muy bien estructurada."},
+                {"role": "user", "content": prompt}
+            ]
+        )
+        
+        return {"consejo": response.choices[0].message.content}
+    except Exception as e:
+        return {"consejo": f"Error contactando a la Inteligencia Artificial: {str(e)}"}
