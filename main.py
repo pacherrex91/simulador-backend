@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 import os
-from openai import OpenAI
+import google.generativeai as genai
 
 app = FastAPI()
 
@@ -126,15 +126,13 @@ def simular_negocio(datos: DatosSimulacion):
         }
     }
 
-# Nuevo Endpoint: El Consejero de Inteligencia Artificial (DeepSeek)
+# Endpoint Consejero IA (Versión Google Gemini)
 @app.post("/consejero")
 async def obtener_consejo(datos: dict):
     try:
-        # Iniciamos el cliente de IA apuntando a la API de DeepSeek
-        client = OpenAI(
-            api_key=os.environ.get("DEEPSEEK_API_KEY"),
-            base_url="https://api.deepseek.com"
-        )
+        # Configuramos la llave secreta de Gemini
+        genai.configure(api_key=os.environ.get("GEMINI_API_KEY"))
+        modelo = genai.GenerativeModel('gemini-1.5-flash')
         
         rol = datos.get("rol")
         metricas = datos.get("metricas", {})
@@ -144,7 +142,6 @@ async def obtener_consejo(datos: dict):
         prompt += f"Ventas necesarias para punto de equilibrio: {metricas.get('punto_equilibrio', 'N/A')}.\n"
         prompt += f"Dinero faltante para reserva de emergencia: S/ {metricas.get('falta_fondo', 'N/A')}.\n\n"
         
-        # Definimos el comportamiento según el botón que se presionó
         if rol == "auditor":
             prompt += "Actúa como un auditor financiero estricto. Analiza el riesgo de este negocio y dame 3 consejos crudos, directos y prácticos para reducir costos o mejorar el punto de equilibrio."
         elif rol == "marketing":
@@ -152,15 +149,9 @@ async def obtener_consejo(datos: dict):
         elif rol == "operaciones":
             prompt += "Actúa como un asesor operativo experimentado. Detecta puntos ciegos en la logística de este negocio y dame recomendaciones para optimizar el tiempo y los recursos."
             
-        # Hacemos la llamada al modelo de DeepSeek
-        response = client.chat.completions.create(
-            model="deepseek-chat",
-            messages=[
-                {"role": "system", "content": "Eres un experto asesor de negocios. Responde de manera clara, directa y muy bien estructurada."},
-                {"role": "user", "content": prompt}
-            ]
-        )
+        # Hacemos la llamada a Gemini
+        respuesta = modelo.generate_content(prompt)
         
-        return {"consejo": response.choices[0].message.content}
+        return {"consejo": respuesta.text}
     except Exception as e:
-        return {"consejo": f"Error contactando a la Inteligencia Artificial: {str(e)}"}
+        return {"consejo": f"Error contactando a la Inteligencia Artificial (Gemini): {str(e)}"}
