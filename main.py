@@ -36,6 +36,7 @@ class Ventas(BaseModel):
 class DatosSimulacion(BaseModel):
     nombre_idea: str
     sector: str
+    moneda: str = "S/"
     capital_disponible: float = 10000.0
     inversion: Inversion
     precio_venta: float
@@ -44,9 +45,8 @@ class DatosSimulacion(BaseModel):
     ventas: Ventas
     regimen_tributario: str = "NRUS"
     inflacion_anual: float = 3.0
-    # Nuevos campos para préstamo
     solicitar_prestamo: bool = False
-    tea: float = 15.0 # Tasa Efectiva Anual
+    tea: float = 15.0
     plazo_meses: int = 12
 
 @app.post("/simular")
@@ -134,6 +134,7 @@ def simular_negocio(datos: DatosSimulacion):
     if escenario_base["caja_final"] < 0: prob_perdida += 45
     if punto_equilibrio > datos.ventas.base: prob_perdida += 20
     
+    capital_propio_invertido = min(inversion_total, datos.capital_disponible)
     roi = (escenario_base["caja_final"] / capital_propio_invertido) * 100 if capital_propio_invertido > 0 else 0
     ganancia_promedio = round((escenario_pesimista["caja_final"] + escenario_base["caja_final"] + escenario_optimista["caja_final"]) / 3, 2)
 
@@ -178,7 +179,6 @@ async def obtener_consejo(datos: dict):
         return {"consejo": respuesta.text}
     except Exception as e: return {"consejo": f"Error de conexión IA: {str(e)}"}
 
-# NUEVO ENDPOINT: Chat dinámico con la IA
 @app.post("/chat")
 async def chat_ia(datos: dict):
     try:
