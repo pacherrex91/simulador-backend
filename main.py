@@ -175,9 +175,15 @@ async def obtener_consejo(datos: dict):
         if rol == "auditor": prompt += "Actúa como auditor estricto. Dame 3 consejos crudos para reducir costos o mitigar riesgos."
         elif rol == "marketing": prompt += "Actúa como director de marketing. Diséñame una estrategia rápida y textos promocionales."
         elif rol == "operaciones": prompt += "Actúa como asesor operativo. Detecta cuellos de botella en logística o producción."
+        
         respuesta = modelo.generate_content(prompt)
         return {"consejo": respuesta.text}
-    except Exception as e: return {"consejo": f"Error de conexión IA: {str(e)}"}
+    except Exception as e: 
+        error_str = str(e)
+        # Interceptamos el Error 429 para dar un mensaje amigable
+        if "429" in error_str or "quota" in error_str.lower():
+            return {"consejo": "⚠️ **Límite de consultas alcanzado.**\n\nGoogle Gemini limita la cantidad de consultas rápidas en cuentas gratuitas. Por favor, **espera 60 segundos** y vuelve a intentarlo."}
+        return {"consejo": f"Error de conexión IA: {error_str}"}
 
 @app.post("/chat")
 async def chat_ia(datos: dict):
@@ -196,4 +202,8 @@ async def chat_ia(datos: dict):
         
         respuesta = modelo.generate_content(mensajes)
         return {"respuesta": respuesta.text}
-    except Exception as e: return {"respuesta": f"Error en el chat: {str(e)}"}
+    except Exception as e: 
+        error_str = str(e)
+        if "429" in error_str or "quota" in error_str.lower():
+            return {"respuesta": "⚠️ Límite de consultas gratuitas superado. Por favor, espera 60 segundos antes de enviar otro mensaje."}
+        return {"respuesta": f"Error en el chat: {error_str}"}
