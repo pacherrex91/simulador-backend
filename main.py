@@ -45,9 +45,10 @@ class DatosSimulacion(BaseModel):
     ventas: Ventas
     regimen_tributario: str = "NRUS"
     inflacion_anual: float = 3.0
-    solicitar_prestamo: bool = False
-    tea: float = 15.0
-    plazo_meses: int = 12
+    # Campos actualizados de Financiamiento
+    financiamiento_monto: float = 0.0
+    financiamiento_tasa_mensual: float = 0.0
+    financiamiento_plazo: int = 12
 
 @app.post("/simular")
 def simular_negocio(datos: DatosSimulacion):
@@ -61,20 +62,22 @@ def simular_negocio(datos: DatosSimulacion):
         datos.gastos_fijos.sueldo_emprendedor, datos.gastos_fijos.otros
     ])
     
-    # Cálculo de Préstamo Bancario (Método Francés)
-    monto_prestamo = 0
+    # Cálculo de Préstamo Bancario
     cuota_prestamo = 0
-    if datos.solicitar_prestamo and inversion_total > datos.capital_disponible:
-        monto_prestamo = inversion_total - datos.capital_disponible
-        tem = (1 + (datos.tea / 100)) ** (1/12) - 1 # Tasa Efectiva Mensual
-        if tem > 0 and datos.plazo_meses > 0:
-            cuota_prestamo = monto_prestamo * (tem * (1 + tem)**datos.plazo_meses) / ((1 + tem)**datos.plazo_meses - 1)
+    tasa = datos.financiamiento_tasa_mensual / 100
+    plazo = datos.financiamiento_plazo
+    monto_financiar = datos.financiamiento_monto
+    
+    if monto_financiar > 0 and plazo > 0:
+        if tasa > 0:
+            cuota_prestamo = monto_financiar * (tasa * (1 + tasa)**plazo) / ((1 + tasa)**plazo - 1)
         else:
-            cuota_prestamo = monto_prestamo / max(1, datos.plazo_meses)
+            cuota_prestamo = monto_financiar / plazo
             
-    # El punto de equilibrio debe cubrir la cuota del préstamo
     margen_unitario = datos.precio_venta - datos.costo_directo
     impuesto_estimado = 50 if datos.regimen_tributario == "NRUS" else (datos.ventas.base * datos.precio_venta * 0.015)
+    
+    # El punto de equilibrio asume todos los gastos fijos + impuestos + cuota del banco
     gastos_mes_1 = gastos_fijos_base + impuesto_estimado + cuota_prestamo
     punto_equilibrio = 999999 if margen_unitario <= 0 else int(gastos_mes_1 / margen_unitario) + 1
     
@@ -82,8 +85,15 @@ def simular_negocio(datos: DatosSimulacion):
     capital_invertible = max(0, datos.capital_disponible - reserva_emergencia)
     margen_seguridad = max(0, ((datos.ventas.base - punto_equilibrio) / datos.ventas.base) * 100) if datos.ventas.base > 0 else 0
 
+    # Determinar en qué mes las ventas (escenario base) alcanzan el punto de equilibrio
+    mes_alcanza_equilibrio = "No alcanza"
+    v_mes = datos.ventas.base
+    for m in range(1, 13):
+        if v_mes >= punto_equilibrio and mes_alcanza_equilibrio == "No alcanza":
+            mes_alcanza_equilibrio = m
+        v_mes = v_mes * (1 + (datos.ventas.crecimiento_mensual/100))
+
     def proyectar_escenario(ventas_iniciales, crecimiento):
-        # La caja arranca en negativo solo por la parte que el usuario puso de su bolsillo
         capital_propio_invertido = min(inversion_total, datos.capital_disponible)
         caja_acumulada = -capital_propio_invertido
         meses = []
@@ -107,9 +117,8 @@ def simular_negocio(datos: DatosSimulacion):
             inflacion_mensual = datos.inflacion_anual / 100 / 12
             gastos_fijos_inflados = gastos_fijos_base * ((1 + inflacion_mensual) ** (mes - 1))
             
-            # Sumamos la cuota del préstamo a los costos de salida de caja
-            cuota_mes = cuota_prestamo if mes <= datos.plazo_meses else 0
-            
+            # Se resta la cuota del préstamo de la caja si aún está dentro del plazo
+            cuota_mes = cuota_prestamo if mes <= plazo else 0
             costos_mes = costos_variables + gastos_fijos_inflados + impuestos + cuota_mes
             costos_totales_anio += costos_mes
             
@@ -146,7 +155,7 @@ def simular_negocio(datos: DatosSimulacion):
         if escenario_base["mes_recuperacion"] > 8: score -= 15
     else: score -= 30
     if margen_seguridad < 15: score -= 10
-    if inversion_total > capital_invertible and not datos.solicitar_prestamo: score -= 20
+    if (inversion_total > datos.capital_disponible) and monto_financiar == 0: score -= 20
     score = max(0, min(100, score))
 
     if score >= 75: recomendacion = {"estado": "🟢 INVERTIR", "msg": "Alto potencial y riesgo controlado."}
@@ -158,7 +167,8 @@ def simular_negocio(datos: DatosSimulacion):
             "inversion_total": inversion_total, "margen_unitario": margen_unitario, "punto_equilibrio": punto_equilibrio,
             "margen_seguridad": round(margen_seguridad, 1), "roi": round(roi, 1), "reserva_emergencia": reserva_emergencia,
             "capital_invertible": capital_invertible, "score": score, "recomendacion": recomendacion,
-            "prestamo": {"monto": round(monto_prestamo, 2), "cuota_mensual": round(cuota_prestamo, 2)}
+            "prestamo": {"monto": round(monto_financiar, 2), "cuota_mensual": round(cuota_prestamo, 2)},
+            "mes_alcanza_equilibrio": mes_alcanza_equilibrio
         },
         "pesimista": escenario_pesimista, "base": escenario_base, "optimista": escenario_optimista,
         "riesgo": {"probabilidad_perdida": min(100, prob_perdida), "ganancia_promedio_anio": ganancia_promedio}
@@ -180,7 +190,6 @@ async def obtener_consejo(datos: dict):
         return {"consejo": respuesta.text}
     except Exception as e: 
         error_str = str(e)
-        # Interceptamos el Error 429 para dar un mensaje amigable
         if "429" in error_str or "quota" in error_str.lower():
             return {"consejo": "⚠️ **Límite de consultas alcanzado.**\n\nGoogle Gemini limita la cantidad de consultas rápidas en cuentas gratuitas. Por favor, **espera 60 segundos** y vuelve a intentarlo."}
         return {"consejo": f"Error de conexión IA: {error_str}"}
