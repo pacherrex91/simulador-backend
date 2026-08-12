@@ -44,6 +44,10 @@ class DatosSimulacion(BaseModel):
     ventas: Ventas
     regimen_tributario: str = "NRUS"
     inflacion_anual: float = 3.0
+    # Nuevos campos para préstamo
+    solicitar_prestamo: bool = False
+    tea: float = 15.0 # Tasa Efectiva Anual
+    plazo_meses: int = 12
 
 @app.post("/simular")
 def simular_negocio(datos: DatosSimulacion):
@@ -57,11 +61,21 @@ def simular_negocio(datos: DatosSimulacion):
         datos.gastos_fijos.sueldo_emprendedor, datos.gastos_fijos.otros
     ])
     
+    # Cálculo de Préstamo Bancario (Método Francés)
+    monto_prestamo = 0
+    cuota_prestamo = 0
+    if datos.solicitar_prestamo and inversion_total > datos.capital_disponible:
+        monto_prestamo = inversion_total - datos.capital_disponible
+        tem = (1 + (datos.tea / 100)) ** (1/12) - 1 # Tasa Efectiva Mensual
+        if tem > 0 and datos.plazo_meses > 0:
+            cuota_prestamo = monto_prestamo * (tem * (1 + tem)**datos.plazo_meses) / ((1 + tem)**datos.plazo_meses - 1)
+        else:
+            cuota_prestamo = monto_prestamo / max(1, datos.plazo_meses)
+            
+    # El punto de equilibrio debe cubrir la cuota del préstamo
     margen_unitario = datos.precio_venta - datos.costo_directo
-    
-    # Estimación rápida de impuesto mes 1 para el punto de equilibrio
     impuesto_estimado = 50 if datos.regimen_tributario == "NRUS" else (datos.ventas.base * datos.precio_venta * 0.015)
-    gastos_mes_1 = gastos_fijos_base + impuesto_estimado
+    gastos_mes_1 = gastos_fijos_base + impuesto_estimado + cuota_prestamo
     punto_equilibrio = 999999 if margen_unitario <= 0 else int(gastos_mes_1 / margen_unitario) + 1
     
     reserva_emergencia = gastos_fijos_base * 3
@@ -69,7 +83,9 @@ def simular_negocio(datos: DatosSimulacion):
     margen_seguridad = max(0, ((datos.ventas.base - punto_equilibrio) / datos.ventas.base) * 100) if datos.ventas.base > 0 else 0
 
     def proyectar_escenario(ventas_iniciales, crecimiento):
-        caja_acumulada = -inversion_total
+        # La caja arranca en negativo solo por la parte que el usuario puso de su bolsillo
+        capital_propio_invertido = min(inversion_total, datos.capital_disponible)
+        caja_acumulada = -capital_propio_invertido
         meses = []
         mes_recuperacion = "No recupera en Año 1"
         ventas_totales_anio = 0
@@ -81,19 +97,20 @@ def simular_negocio(datos: DatosSimulacion):
             ingresos = ventas_mes * datos.precio_venta
             costos_variables = ventas_mes * datos.costo_directo
             
-            # Cálculo de Impuestos por Régimen Sunat
             if datos.regimen_tributario == "NRUS":
                 impuestos = 20 if ingresos <= 5000 else 50
             elif datos.regimen_tributario == "RER":
-                impuestos = ingresos * 0.015  # 1.5% Ingresos
+                impuestos = ingresos * 0.015
             else: 
-                impuestos = ingresos * 0.01   # MYPE/General: 1% pago a cuenta mensual
+                impuestos = ingresos * 0.01
 
-            # Aplicar inflación mensual a los costos fijos
             inflacion_mensual = datos.inflacion_anual / 100 / 12
             gastos_fijos_inflados = gastos_fijos_base * ((1 + inflacion_mensual) ** (mes - 1))
             
-            costos_mes = costos_variables + gastos_fijos_inflados + impuestos
+            # Sumamos la cuota del préstamo a los costos de salida de caja
+            cuota_mes = cuota_prestamo if mes <= datos.plazo_meses else 0
+            
+            costos_mes = costos_variables + gastos_fijos_inflados + impuestos + cuota_mes
             costos_totales_anio += costos_mes
             
             utilidad_neta = ingresos - costos_mes
@@ -117,7 +134,7 @@ def simular_negocio(datos: DatosSimulacion):
     if escenario_base["caja_final"] < 0: prob_perdida += 45
     if punto_equilibrio > datos.ventas.base: prob_perdida += 20
     
-    roi = (escenario_base["caja_final"] / inversion_total) * 100 if inversion_total > 0 else 0
+    roi = (escenario_base["caja_final"] / capital_propio_invertido) * 100 if capital_propio_invertido > 0 else 0
     ganancia_promedio = round((escenario_pesimista["caja_final"] + escenario_base["caja_final"] + escenario_optimista["caja_final"]) / 3, 2)
 
     score = 100
@@ -128,18 +145,19 @@ def simular_negocio(datos: DatosSimulacion):
         if escenario_base["mes_recuperacion"] > 8: score -= 15
     else: score -= 30
     if margen_seguridad < 15: score -= 10
-    if inversion_total > capital_invertible: score -= 20
+    if inversion_total > capital_invertible and not datos.solicitar_prestamo: score -= 20
     score = max(0, min(100, score))
 
-    if score >= 75: recomendacion = {"estado": "🟢 INVERTIR", "msg": "Alto potencial, riesgo controlado y viable con tu capital."}
-    elif score >= 45: recomendacion = {"estado": "🟡 ANALIZAR MEJOR", "msg": "Rentabilidad moderada o riesgo alto. Optimiza tus costos."}
-    else: recomendacion = {"estado": "🔴 NO INVERTIR", "msg": "Alta probabilidad de pérdida o capital insuficiente para operar seguro."}
+    if score >= 75: recomendacion = {"estado": "🟢 INVERTIR", "msg": "Alto potencial y riesgo controlado."}
+    elif score >= 45: recomendacion = {"estado": "🟡 ANALIZAR MEJOR", "msg": "Rentabilidad moderada o riesgo alto."}
+    else: recomendacion = {"estado": "🔴 NO INVERTIR", "msg": "Alta probabilidad de pérdida o capital insuficiente."}
     
     return {
         "metricas": {
             "inversion_total": inversion_total, "margen_unitario": margen_unitario, "punto_equilibrio": punto_equilibrio,
             "margen_seguridad": round(margen_seguridad, 1), "roi": round(roi, 1), "reserva_emergencia": reserva_emergencia,
-            "capital_invertible": capital_invertible, "score": score, "recomendacion": recomendacion
+            "capital_invertible": capital_invertible, "score": score, "recomendacion": recomendacion,
+            "prestamo": {"monto": round(monto_prestamo, 2), "cuota_mensual": round(cuota_prestamo, 2)}
         },
         "pesimista": escenario_pesimista, "base": escenario_base, "optimista": escenario_optimista,
         "riesgo": {"probabilidad_perdida": min(100, prob_perdida), "ganancia_promedio_anio": ganancia_promedio}
@@ -152,10 +170,30 @@ async def obtener_consejo(datos: dict):
         modelo = genai.GenerativeModel('gemini-3.5-flash')
         rol = datos.get("rol")
         metricas = datos.get("metricas", {})
-        prompt = f"Analiza este proyecto: {datos.get('idea')} (Sector: {datos.get('sector')}).\nScore: {metricas.get('score', 'N/A')}/100. Riesgo: Moderado.\n\n"
+        prompt = f"Proyecto: {datos.get('idea')} (Sector: {datos.get('sector')}).\nScore: {metricas.get('score', 'N/A')}/100. Riesgo: Moderado.\n\n"
         if rol == "auditor": prompt += "Actúa como auditor estricto. Dame 3 consejos crudos para reducir costos o mitigar riesgos."
         elif rol == "marketing": prompt += "Actúa como director de marketing. Diséñame una estrategia rápida y textos promocionales."
         elif rol == "operaciones": prompt += "Actúa como asesor operativo. Detecta cuellos de botella en logística o producción."
         respuesta = modelo.generate_content(prompt)
         return {"consejo": respuesta.text}
     except Exception as e: return {"consejo": f"Error de conexión IA: {str(e)}"}
+
+# NUEVO ENDPOINT: Chat dinámico con la IA
+@app.post("/chat")
+async def chat_ia(datos: dict):
+    try:
+        genai.configure(api_key=os.environ.get("GEMINI_API_KEY"))
+        modelo = genai.GenerativeModel('gemini-3.5-flash')
+        historial = datos.get("history", [])
+        pregunta = datos.get("question", "")
+        contexto = f"Contexto del negocio: {datos.get('idea')} ({datos.get('sector')}). ROI: {datos.get('metricas', {}).get('roi')}%. "
+        
+        mensajes = [{"role": "user", "parts": [{"text": "Eres un experto asesor financiero y de negocios de la plataforma Decisiones de Inversión IA."}]}]
+        for msg in historial:
+            rol = "user" if msg["role"] == "user" else "model"
+            mensajes.append({"role": rol, "parts": [{"text": msg["content"]}]})
+        mensajes.append({"role": "user", "parts": [{"text": contexto + pregunta}]})
+        
+        respuesta = modelo.generate_content(mensajes)
+        return {"respuesta": respuesta.text}
+    except Exception as e: return {"respuesta": f"Error en el chat: {str(e)}"}
