@@ -45,7 +45,6 @@ class DatosSimulacion(BaseModel):
     ventas: Ventas
     regimen_tributario: str = "NRUS"
     inflacion_anual: float = 3.0
-    # Campos actualizados de Financiamiento
     financiamiento_monto: float = 0.0
     financiamiento_tasa_mensual: float = 0.0
     financiamiento_plazo: int = 12
@@ -62,7 +61,6 @@ def simular_negocio(datos: DatosSimulacion):
         datos.gastos_fijos.sueldo_emprendedor, datos.gastos_fijos.otros
     ])
     
-    # Cálculo de Préstamo Bancario
     cuota_prestamo = 0
     tasa = datos.financiamiento_tasa_mensual / 100
     plazo = datos.financiamiento_plazo
@@ -77,7 +75,6 @@ def simular_negocio(datos: DatosSimulacion):
     margen_unitario = datos.precio_venta - datos.costo_directo
     impuesto_estimado = 50 if datos.regimen_tributario == "NRUS" else (datos.ventas.base * datos.precio_venta * 0.015)
     
-    # El punto de equilibrio asume todos los gastos fijos + impuestos + cuota del banco
     gastos_mes_1 = gastos_fijos_base + impuesto_estimado + cuota_prestamo
     punto_equilibrio = 999999 if margen_unitario <= 0 else int(gastos_mes_1 / margen_unitario) + 1
     
@@ -85,13 +82,35 @@ def simular_negocio(datos: DatosSimulacion):
     capital_invertible = max(0, datos.capital_disponible - reserva_emergencia)
     margen_seguridad = max(0, ((datos.ventas.base - punto_equilibrio) / datos.ventas.base) * 100) if datos.ventas.base > 0 else 0
 
-    # Determinar en qué mes las ventas (escenario base) alcanzan el punto de equilibrio
     mes_alcanza_equilibrio = "No alcanza"
     v_mes = datos.ventas.base
     for m in range(1, 13):
         if v_mes >= punto_equilibrio and mes_alcanza_equilibrio == "No alcanza":
             mes_alcanza_equilibrio = m
         v_mes = v_mes * (1 + (datos.ventas.crecimiento_mensual/100))
+
+    # CÁLCULO DE DEDICACIÓN / PRESENCIA (NUEVO)
+    sector_str = datos.sector.lower()
+    es_digital = any(keyword in sector_str for keyword in ["tech", "e-commerce", "digital", "online", "software", "web"])
+    es_alimentos = any(keyword in sector_str for keyword in ["gastro", "alimento", "restaurante", "food", "cafeteria"])
+    
+    horas_semana = 40 # Base
+    presencia = 100 # Porcentaje presencial
+    
+    if es_digital:
+        horas_semana = 25
+        presencia = 5 # Casi nada
+    elif es_alimentos:
+        horas_semana = 60 # Muy esclavo
+        presencia = 90
+    else:
+        horas_semana = 45
+        presencia = 70
+        
+    # Si te pagas un sueldo alto al inicio, asumo que serás operador full time
+    if datos.gastos_fijos.sueldo_emprendedor > 2000:
+        horas_semana = min(80, horas_semana + 15)
+        presencia = min(100, presencia + 10)
 
     def proyectar_escenario(ventas_iniciales, crecimiento):
         capital_propio_invertido = min(inversion_total, datos.capital_disponible)
@@ -117,7 +136,6 @@ def simular_negocio(datos: DatosSimulacion):
             inflacion_mensual = datos.inflacion_anual / 100 / 12
             gastos_fijos_inflados = gastos_fijos_base * ((1 + inflacion_mensual) ** (mes - 1))
             
-            # Se resta la cuota del préstamo de la caja si aún está dentro del plazo
             cuota_mes = cuota_prestamo if mes <= plazo else 0
             costos_mes = costos_variables + gastos_fijos_inflados + impuestos + cuota_mes
             costos_totales_anio += costos_mes
@@ -168,7 +186,8 @@ def simular_negocio(datos: DatosSimulacion):
             "margen_seguridad": round(margen_seguridad, 1), "roi": round(roi, 1), "reserva_emergencia": reserva_emergencia,
             "capital_invertible": capital_invertible, "score": score, "recomendacion": recomendacion,
             "prestamo": {"monto": round(monto_financiar, 2), "cuota_mensual": round(cuota_prestamo, 2)},
-            "mes_alcanza_equilibrio": mes_alcanza_equilibrio
+            "mes_alcanza_equilibrio": mes_alcanza_equilibrio,
+            "dedicacion": {"horas_semana": horas_semana, "porcentaje_presencial": presencia}
         },
         "pesimista": escenario_pesimista, "base": escenario_base, "optimista": escenario_optimista,
         "riesgo": {"probabilidad_perdida": min(100, prob_perdida), "ganancia_promedio_anio": ganancia_promedio}
