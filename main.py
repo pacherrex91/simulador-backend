@@ -148,14 +148,64 @@ def simular_negocio(datos: DatosSimulacion):
         else:
             cuota_prestamo = monto_financiar / plazo
 
-    reserva_emergencia = gastos_fijos_base * max(0, datos.meses_reserva)
-    capital_invertible = max(0, datos.capital_disponible - reserva_emergencia)
-    alerta_liquidez = (
-        "⚠️ Tu capital no cubre la inversión y la reserva requerida."
-        if (inversion_total + reserva_emergencia)
-        > (datos.capital_disponible + monto_financiar)
-        else "✅ Liquidez saludable."
+        # --- MES 0: APERTURA Y LIQUIDEZ ---
+    recursos_disponibles = datos.capital_disponible + monto_financiar
+
+    deficit_apertura = max(
+        0.0,
+        inversion_total - recursos_disponibles,
     )
+
+    caja_despues_apertura = max(
+        0.0,
+        recursos_disponibles - inversion_total,
+    )
+
+    reserva_emergencia = (
+        gastos_fijos_base * max(0, datos.meses_reserva)
+    )
+
+    deficit_reserva = max(
+        0.0,
+        reserva_emergencia - caja_despues_apertura,
+    )
+
+    cobertura_meses = (
+        caja_despues_apertura / gastos_fijos_base
+        if gastos_fijos_base > 0
+        else 0.0
+    )
+
+    if deficit_apertura > 0:
+        estado_liquidez = "🔴 FINANCIAMIENTO INSUFICIENTE"
+        alerta_liquidez = (
+            f"Faltan {datos.moneda} {deficit_apertura:,.2f} "
+            "para financiar la apertura."
+        )
+
+    elif cobertura_meses < 1:
+        estado_liquidez = "🟠 LIQUIDEZ CRÍTICA"
+        alerta_liquidez = (
+            f"Puedes abrir, pero la caja restante cubre solo "
+            f"{cobertura_meses:.1f} meses de gastos fijos."
+        )
+
+    elif cobertura_meses < max(0, datos.meses_reserva):
+        estado_liquidez = "🟡 LIQUIDEZ AJUSTADA"
+        alerta_liquidez = (
+            f"Puedes abrir, pero aún faltan "
+            f"{datos.moneda} {deficit_reserva:,.2f} "
+            "para alcanzar la reserva objetivo."
+        )
+
+    else:
+        estado_liquidez = "🟢 LIQUIDEZ SALUDABLE"
+        alerta_liquidez = (
+            "La apertura y la reserva objetivo están cubiertas."
+        )
+
+    # Se mantiene este nombre por compatibilidad con la V3.3 actual.
+    capital_invertible = caja_despues_apertura
 
     margen_unitario = datos.precio_venta - datos.costo_directo
     punto_equilibrio = (
@@ -433,6 +483,12 @@ def simular_negocio(datos: DatosSimulacion):
             "reserva_emergencia": round(reserva_emergencia, 2),
             "capital_invertible": round(capital_invertible, 2),
             "alerta_liquidez": alerta_liquidez,
+            "recursos_disponibles": round(recursos_disponibles, 2),
+            "deficit_apertura": round(deficit_apertura, 2),
+            "caja_despues_apertura": round(caja_despues_apertura, 2),
+            "deficit_reserva": round(deficit_reserva, 2),
+            "cobertura_meses": round(cobertura_meses, 2),
+            "estado_liquidez": estado_liquidez,
             "van": van_base,
             "tir": tir_base,
             "roi": escenario_base["roi"],
