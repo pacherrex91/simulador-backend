@@ -289,14 +289,27 @@ def simular_negocio(datos: DatosSimulacion):
                 ventas_tendencia * factor_estacional,
                 capacidad_ventas,
             )
-            ingresos = ventas_mes * precio_final
-            costos_variables = ventas_mes * costo_final
-            margen_bruto = ingresos - costos_variables
+                       # Inflación mensual equivalente a partir de la inflación anual.
+            inflacion_anual_decimal = datos.inflacion_anual / 100.0
+            inflacion_mensual = (
+                (1 + inflacion_anual_decimal) ** (1 / 12) - 1
+            )
 
-            inflacion_mensual = datos.inflacion_anual / 100 / 12
-            gastos_fijos_inflados = gastos_fijos_base * (
+            factor_inflacion = (
                 (1 + inflacion_mensual) ** (mes - 1)
             )
+
+            # El precio de venta se mantiene sin aumento automático.
+            ingresos = ventas_mes * precio_final
+
+            # Los costos variables sí aumentan con la inflación.
+            costo_unitario_inflado = costo_final * factor_inflacion
+            costos_variables = ventas_mes * costo_unitario_inflado
+
+            margen_bruto = ingresos - costos_variables
+
+            # Los gastos fijos también aumentan con la inflación.
+            gastos_fijos_inflados = gastos_fijos_base * factor_inflacion
 
             ebit = margen_bruto - gastos_fijos_inflados - depreciacion_mensual
 
