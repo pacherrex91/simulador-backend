@@ -275,10 +275,19 @@ def simular_negocio(datos: DatosSimulacion):
             )
             factor_estacional = 1.0 + (ajuste_estacional / 100.0)
 
-            ventas_mes = (
+                       # Crecimiento con límite de capacidad.
+            # Las ventas optimistas de la plantilla funcionan
+            # como capacidad mensual de referencia.
+            capacidad_ventas = max(0.0, float(datos.ventas.optimista))
+
+            ventas_tendencia = (
                 ventas_iniciales
                 * ((1 + (crecimiento / 100)) ** (mes - 1))
-                * factor_estacional
+            )
+
+            ventas_mes = min(
+                ventas_tendencia * factor_estacional,
+                capacidad_ventas,
             )
             ingresos = ventas_mes * precio_final
             costos_variables = ventas_mes * costo_final
