@@ -89,11 +89,36 @@ def _normalizar_inversion(datos: DatosSimulacion) -> list[ItemDinamico]:
     if datos.inversion:
         inv = datos.inversion
         return [
-            ItemDinamico(id="legacy-insumos", nombre="Insumos", monto=inv.insumos, categoria="Insumos"),
-            ItemDinamico(id="legacy-equipos", nombre="Equipos", monto=inv.equipos, categoria="Equipos"),
-            ItemDinamico(id="legacy-empaques", nombre="Empaques", monto=inv.empaques, categoria="Otros"),
-            ItemDinamico(id="legacy-permisos", nombre="Permisos", monto=inv.permisos, categoria="Otros"),
-            ItemDinamico(id="legacy-otros", nombre="Otros", monto=inv.otros, categoria="Otros"),
+            ItemDinamico(
+                id="legacy-insumos",
+                nombre="Insumos",
+                monto=inv.insumos,
+                categoria="Insumos",
+            ),
+            ItemDinamico(
+                id="legacy-equipos",
+                nombre="Equipos",
+                monto=inv.equipos,
+                categoria="Equipos",
+            ),
+            ItemDinamico(
+                id="legacy-empaques",
+                nombre="Empaques",
+                monto=inv.empaques,
+                categoria="Otros",
+            ),
+            ItemDinamico(
+                id="legacy-permisos",
+                nombre="Permisos",
+                monto=inv.permisos,
+                categoria="Otros",
+            ),
+            ItemDinamico(
+                id="legacy-otros",
+                nombre="Otros",
+                monto=inv.otros,
+                categoria="Otros",
+            ),
         ]
 
     return []
@@ -106,15 +131,30 @@ def _normalizar_gastos(datos: DatosSimulacion) -> list[ItemDinamico]:
     if datos.gastos_fijos:
         gf = datos.gastos_fijos
         return [
-            ItemDinamico(id="legacy-marketing", nombre="Marketing", monto=gf.marketing, categoria="Marketing"),
-            ItemDinamico(id="legacy-logistica", nombre="Logística", monto=gf.logistica, categoria="Proveedores"),
+            ItemDinamico(
+                id="legacy-marketing",
+                nombre="Marketing",
+                monto=gf.marketing,
+                categoria="Marketing",
+            ),
+            ItemDinamico(
+                id="legacy-logistica",
+                nombre="Logística",
+                monto=gf.logistica,
+                categoria="Proveedores",
+            ),
             ItemDinamico(
                 id="legacy-sueldo",
                 nombre="Sueldo Emprendedor",
                 monto=gf.sueldo_emprendedor,
                 categoria="Personal",
             ),
-            ItemDinamico(id="legacy-otros", nombre="Otros Fijos", monto=gf.otros, categoria="Otros"),
+            ItemDinamico(
+                id="legacy-otros",
+                nombre="Otros Fijos",
+                monto=gf.otros,
+                categoria="Otros",
+            ),
         ]
 
     return []
@@ -128,7 +168,7 @@ def simular_negocio(datos: DatosSimulacion):
     inversion_total = sum(item.monto for item in inversion_items)
     gastos_fijos_base = sum(item.monto for item in gasto_items)
 
-        # --- DEPRECIACIÓN ECONÓMICA DE ACTIVOS ---
+    # --- DEPRECIACIÓN ECONÓMICA DE ACTIVOS ---
     # Si un equipo no trae vida útil definida,
     # usamos 60 meses y un residual del 10 %.
     VIDA_UTIL_EQUIPOS_DEFAULT = 60
@@ -146,18 +186,12 @@ def simular_negocio(datos: DatosSimulacion):
         vida_util_efectiva = item.vida_util
         residual_efectivo = item.residual
 
-        # Las plantillas antiguas tienen Equipos con vida_util = 0.
-        # En ese caso aplicamos nuestros valores predeterminados.
         if es_equipo and vida_util_efectiva <= 0:
             vida_util_efectiva = VIDA_UTIL_EQUIPOS_DEFAULT
 
             if residual_efectivo <= 0:
-                residual_efectivo = (
-                    item.monto * RESIDUAL_EQUIPOS_DEFAULT
-                )
+                residual_efectivo = item.monto * RESIDUAL_EQUIPOS_DEFAULT
 
-        # Solo se deprecian elementos que tengan vida útil.
-        # Insumos, empaques y permisos no se deprecian.
         if vida_util_efectiva > 0:
             residual_efectivo = max(
                 0.0,
@@ -169,27 +203,22 @@ def simular_negocio(datos: DatosSimulacion):
                 float(item.monto) - residual_efectivo,
             )
 
-            depreciacion_item = (
-                base_depreciable / vida_util_efectiva
-            )
+            depreciacion_item = base_depreciable / vida_util_efectiva
 
             depreciacion_mensual += depreciacion_item
             valor_activos_inicial += float(item.monto)
             valor_residual_activos_final += residual_efectivo
 
-            meses_depreciados = min(
-                36,
-                vida_util_efectiva,
-            )
+            meses_depreciados = min(36, vida_util_efectiva)
 
             valor_item_mes_36 = max(
                 residual_efectivo,
-                float(item.monto)
-                - (depreciacion_item * meses_depreciados),
+                float(item.monto) - (depreciacion_item * meses_depreciados),
             )
 
             valor_activos_mes_36 += valor_item_mes_36
 
+    # --- FINANCIAMIENTO ---
     cuota_prestamo = 0.0
     tasa = datos.financiamiento_tasa_mensual / 100
     plazo = max(0, datos.financiamiento_plazo)
@@ -205,7 +234,7 @@ def simular_negocio(datos: DatosSimulacion):
         else:
             cuota_prestamo = monto_financiar / plazo
 
-        # --- MES 0: APERTURA Y LIQUIDEZ ---
+    # --- MES 0: APERTURA Y LIQUIDEZ ---
     recursos_disponibles = datos.capital_disponible + monto_financiar
 
     deficit_apertura = max(
@@ -218,9 +247,7 @@ def simular_negocio(datos: DatosSimulacion):
         recursos_disponibles - inversion_total,
     )
 
-    reserva_emergencia = (
-        gastos_fijos_base * max(0, datos.meses_reserva)
-    )
+    reserva_emergencia = gastos_fijos_base * max(0, datos.meses_reserva)
 
     deficit_reserva = max(
         0.0,
@@ -257,33 +284,54 @@ def simular_negocio(datos: DatosSimulacion):
 
     else:
         estado_liquidez = "🟢 LIQUIDEZ SALUDABLE"
-        alerta_liquidez = (
-            "La apertura y la reserva objetivo están cubiertas."
-        )
+        alerta_liquidez = "La apertura y la reserva objetivo están cubiertas."
 
-    # Se mantiene este nombre por compatibilidad con la V3.3 actual.
+    # Compatibilidad con la V3.3 actual.
     capital_invertible = caja_despues_apertura
 
     margen_unitario = datos.precio_venta - datos.costo_directo
+
     punto_equilibrio = (
         999999
         if margen_unitario <= 0
         else int((gastos_fijos_base + cuota_prestamo) / margen_unitario) + 1
     )
+
     margen_seguridad = (
-        max(0, ((datos.ventas.base - punto_equilibrio) / datos.ventas.base) * 100)
+        max(
+            0,
+            ((datos.ventas.base - punto_equilibrio) / datos.ventas.base) * 100,
+        )
         if datos.ventas.base > 0
         else 0
     )
 
+    # --- DEDICACIÓN ESTIMADA ---
     sector_str = datos.sector.lower()
+
     es_digital = any(
         keyword in sector_str
-        for keyword in ["tech", "e-commerce", "digital", "online", "software", "web", "tecnología"]
+        for keyword in [
+            "tech",
+            "e-commerce",
+            "digital",
+            "online",
+            "software",
+            "web",
+            "tecnología",
+        ]
     )
+
     es_alimentos = any(
         keyword in sector_str
-        for keyword in ["gastro", "alimento", "restaurante", "food", "cafeteria", "cafetería"]
+        for keyword in [
+            "gastro",
+            "alimento",
+            "restaurante",
+            "food",
+            "cafeteria",
+            "cafetería",
+        ]
     )
 
     if es_digital:
@@ -294,24 +342,33 @@ def simular_negocio(datos: DatosSimulacion):
         horas_semana, presencia = 45, 70
 
     sueldo_emprendedor = 0.0
+
     if datos.gastos_fijos:
         sueldo_emprendedor = datos.gastos_fijos.sueldo_emprendedor
     else:
         for item in gasto_items:
-            if "sueldo" in item.nombre.lower() or item.categoria.lower() == "personal":
+            if (
+                "sueldo" in item.nombre.lower()
+                or item.categoria.lower() == "personal"
+            ):
                 sueldo_emprendedor += item.monto
 
     if sueldo_emprendedor > 2000:
         horas_semana = min(80, horas_semana + 15)
         presencia = min(100, presencia + 10)
 
+    # --- PROYECCIÓN DE ESCENARIOS ---
     def proyectar_escenario(
         ventas_iniciales: float,
         crecimiento: float,
         precio_mult: float = 1.0,
         costo_mult: float = 1.0,
     ):
-        capital_propio_invertido = min(inversion_total, datos.capital_disponible)
+        capital_propio_invertido = min(
+            inversion_total,
+            datos.capital_disponible,
+        )
+
         caja_acumulada = -capital_propio_invertido
         flujo_neto_mensual: list[float] = []
         caja_mensual: list[float] = []
@@ -325,17 +382,20 @@ def simular_negocio(datos: DatosSimulacion):
 
         for mes in range(1, 37):
             idx_estacional = (mes - 1) % 12
+
             ajuste_estacional = (
                 datos.estacionalidad[idx_estacional]
                 if idx_estacional < len(datos.estacionalidad)
                 else 0.0
             )
+
             factor_estacional = 1.0 + (ajuste_estacional / 100.0)
 
-                       # Crecimiento con límite de capacidad.
-            # Las ventas optimistas de la plantilla funcionan
-            # como capacidad mensual de referencia.
-            capacidad_ventas = max(0.0, float(datos.ventas.optimista))
+            # Crecimiento con límite de capacidad.
+            capacidad_ventas = max(
+                0.0,
+                float(datos.ventas.optimista),
+            )
 
             ventas_tendencia = (
                 ventas_iniciales
@@ -346,7 +406,8 @@ def simular_negocio(datos: DatosSimulacion):
                 ventas_tendencia * factor_estacional,
                 capacidad_ventas,
             )
-                       # Inflación mensual equivalente a partir de la inflación anual.
+
+            # Inflación mensual equivalente a partir de la inflación anual.
             inflacion_anual_decimal = datos.inflacion_anual / 100.0
             inflacion_mensual = (
                 (1 + inflacion_anual_decimal) ** (1 / 12) - 1
@@ -356,20 +417,26 @@ def simular_negocio(datos: DatosSimulacion):
                 (1 + inflacion_mensual) ** (mes - 1)
             )
 
-            # El precio de venta se mantiene sin aumento automático.
+            # Precio sin aumento automático.
             ingresos = ventas_mes * precio_final
 
-            # Los costos variables sí aumentan con la inflación.
+            # Costos variables con inflación.
             costo_unitario_inflado = costo_final * factor_inflacion
             costos_variables = ventas_mes * costo_unitario_inflado
 
             margen_bruto = ingresos - costos_variables
 
-            # Los gastos fijos también aumentan con la inflación.
+            # Gastos fijos con inflación.
             gastos_fijos_inflados = gastos_fijos_base * factor_inflacion
 
-            ebit = margen_bruto - gastos_fijos_inflados - depreciacion_mensual
+            ebit = (
+                margen_bruto
+                - gastos_fijos_inflados
+                - depreciacion_mensual
+            )
 
+            # La lógica tributaria se mantiene temporalmente como estaba.
+            # La revisaremos por separado contra reglas vigentes.
             if datos.regimen_tributario == "NRUS":
                 impuestos = 20 if ingresos <= 5000 else 50
             elif datos.regimen_tributario == "RER":
@@ -378,15 +445,27 @@ def simular_negocio(datos: DatosSimulacion):
                 impuestos = max(0, ebit * 0.295)
 
             utilidad_neta = ebit - impuestos
-            cuota_mes = cuota_prestamo if mes <= plazo else 0
-            flujo_caja = utilidad_neta + depreciacion_mensual - cuota_mes
 
-                        # Valor terminal de los activos al finalizar el horizonte.
-            # Se reconoce una sola vez, en el mes 36.
+            cuota_mes = (
+                cuota_prestamo
+                if mes <= plazo
+                else 0.0
+            )
+
+            flujo_caja = (
+                utilidad_neta
+                + depreciacion_mensual
+                - cuota_mes
+            )
+
+            # Valor terminal de los activos: solo en el mes 36.
             if mes == 36:
                 flujo_caja += valor_activos_mes_36
 
-                flujo_neto_mensual.append(flujo_caja)
+            # MUY IMPORTANTE:
+            # este append debe ejecutarse los 36 meses.
+            flujo_neto_mensual.append(flujo_caja)
+
             caja_acumulada += flujo_caja
             caja_mensual.append(round(caja_acumulada, 2))
 
@@ -410,20 +489,42 @@ def simular_negocio(datos: DatosSimulacion):
                 }
             )
 
-            if caja_acumulada >= 0 and mes_recuperacion == "No recupera":
+            if (
+                caja_acumulada >= 0
+                and mes_recuperacion == "No recupera"
+            ):
                 mes_recuperacion = mes
 
-        tasa_mensual = (datos.tasa_descuento / 100) / 12
-        flujos_para_van = [-capital_propio_invertido] + flujo_neto_mensual
+        # Tasa anual efectiva -> tasa mensual equivalente.
+        tasa_anual_descuento = datos.tasa_descuento / 100.0
+        tasa_mensual = (
+            (1 + tasa_anual_descuento) ** (1 / 12) - 1
+        )
+
+        flujos_para_van = [
+            -capital_propio_invertido
+        ] + flujo_neto_mensual
 
         try:
-            van = float(npf.npv(tasa_mensual, flujos_para_van))
+            van = float(
+                npf.npv(
+                    tasa_mensual,
+                    flujos_para_van,
+                )
+            )
         except Exception:
             van = 0.0
 
         try:
-            tir_mensual = float(npf.irr(flujos_para_van))
-            tir = ((1 + tir_mensual) ** 12 - 1) * 100 if tir_mensual > -1 else -100
+            tir_mensual = float(
+                npf.irr(flujos_para_van)
+            )
+
+            tir = (
+                ((1 + tir_mensual) ** 12 - 1) * 100
+                if tir_mensual > -1
+                else -100
+            )
         except Exception:
             tir = -100.0
 
@@ -432,12 +533,24 @@ def simular_negocio(datos: DatosSimulacion):
             if capital_propio_invertido > 0
             else 0.0
         )
-        total_salidas = sum(abs(f) for f in flujos_para_van if f < 0)
+
+        total_salidas = sum(
+            abs(f)
+            for f in flujos_para_van
+            if f < 0
+        )
+
         b_c = (
-            sum(f for f in flujo_neto_mensual if f > 0) / total_salidas
+            sum(
+                f
+                for f in flujo_neto_mensual
+                if f > 0
+            )
+            / total_salidas
             if total_salidas > 0
             else 0.0
         )
+
         margen_neto = (
             (utilidad_neta_total / ingresos_totales) * 100
             if ingresos_totales > 0
@@ -458,16 +571,29 @@ def simular_negocio(datos: DatosSimulacion):
         }
 
     escenario_base = proyectar_escenario(
-        datos.ventas.base, datos.ventas.crecimiento_mensual
-    )
-    escenario_pesimista = proyectar_escenario(datos.ventas.pesimista, 0)
-    escenario_optimista = proyectar_escenario(
-        datos.ventas.optimista, datos.ventas.crecimiento_mensual * 1.5
+        datos.ventas.base,
+        datos.ventas.crecimiento_mensual,
     )
 
+    escenario_pesimista = proyectar_escenario(
+        datos.ventas.pesimista,
+        0,
+    )
+
+    escenario_optimista = proyectar_escenario(
+        datos.ventas.optimista,
+        datos.ventas.crecimiento_mensual * 1.5,
+    )
+
+    # --- MATRIZ DE SENSIBILIDAD ---
     matriz_sensibilidad = []
+
     for p_m in [0.8, 0.9, 1.0, 1.1, 1.2]:
-        fila = {"precio_mult": p_m, "valores": []}
+        fila = {
+            "precio_mult": p_m,
+            "valores": [],
+        }
+
         for v_m in [0.8, 0.9, 1.0, 1.1, 1.2]:
             res_sens = proyectar_escenario(
                 datos.ventas.base * v_m,
@@ -475,6 +601,7 @@ def simular_negocio(datos: DatosSimulacion):
                 p_m,
                 1.0,
             )
+
             fila["valores"].append(
                 {
                     "vol_mult": v_m,
@@ -482,20 +609,26 @@ def simular_negocio(datos: DatosSimulacion):
                     "tir": res_sens["tir"],
                 }
             )
+
         matriz_sensibilidad.append(fila)
 
     van_base = escenario_base["van"]
     tir_base = escenario_base["tir"]
 
+    # --- RIESGO Y SCORE ---
     prob_perdida = 0
+
     if escenario_pesimista["caja_final"] < 0:
         prob_perdida += 35
+
     if escenario_base["caja_final"] < 0:
         prob_perdida += 45
+
     if punto_equilibrio > datos.ventas.base:
         prob_perdida += 20
 
     score = 100 - prob_perdida
+
     if escenario_base["roi"] < 10:
         score -= 20
     elif escenario_base["roi"] > 50:
@@ -509,7 +642,11 @@ def simular_negocio(datos: DatosSimulacion):
 
     if margen_seguridad < 15:
         score -= 10
-    if inversion_total > datos.capital_disponible and monto_financiar == 0:
+
+    if (
+        inversion_total > datos.capital_disponible
+        and monto_financiar == 0
+    ):
         score -= 20
 
     score = max(0, min(100, score))
@@ -530,19 +667,28 @@ def simular_negocio(datos: DatosSimulacion):
             "msg": "Destrucción de valor (VAN negativo). Proyecto inviable.",
         }
 
+    # --- MES EN QUE LAS VENTAS ALCANZAN EL PUNTO DE EQUILIBRIO ---
     mes_alcanza_equilibrio: int | str = "No alcanza"
+
     for mes in range(1, 37):
         idx_estacional = (mes - 1) % 12
+
         ajuste_estacional = (
             datos.estacionalidad[idx_estacional]
             if idx_estacional < len(datos.estacionalidad)
             else 0.0
         )
-        ventas_mes = (
+
+        ventas_tendencia = (
             datos.ventas.base
             * ((1 + datos.ventas.crecimiento_mensual / 100) ** (mes - 1))
-            * (1 + ajuste_estacional / 100)
         )
+
+        ventas_mes = min(
+            ventas_tendencia * (1 + ajuste_estacional / 100),
+            max(0.0, float(datos.ventas.optimista)),
+        )
+
         if ventas_mes >= punto_equilibrio:
             mes_alcanza_equilibrio = mes
             break
@@ -557,14 +703,36 @@ def simular_negocio(datos: DatosSimulacion):
         2,
     )
 
+    tasa_descuento_mensual_pct = (
+        (((1 + datos.tasa_descuento / 100.0) ** (1 / 12)) - 1)
+        * 100
+    )
+
     return {
         "metricas": {
             "inversion_total": round(inversion_total, 2),
             "valor_activos_inicial": round(valor_activos_inicial, 2),
             "vida_util_equipos_default": VIDA_UTIL_EQUIPOS_DEFAULT,
-            "valor_residual_activos_final": round(valor_residual_activos_final, 2),
-            "depreciacion_mensual": round(depreciacion_mensual, 2),
-            "valor_activos_mes_36": round(valor_activos_mes_36, 2),
+            "valor_residual_activos_final": round(
+                valor_residual_activos_final,
+                2,
+            ),
+            "depreciacion_mensual": round(
+                depreciacion_mensual,
+                2,
+            ),
+            "valor_activos_mes_36": round(
+                valor_activos_mes_36,
+                2,
+            ),
+            "tasa_descuento_anual": round(
+                datos.tasa_descuento,
+                4,
+            ),
+            "tasa_descuento_mensual": round(
+                tasa_descuento_mensual_pct,
+                4,
+            ),
             "gastos_fijos": round(gastos_fijos_base, 2),
             "margen_unitario": round(margen_unitario, 2),
             "punto_equilibrio": punto_equilibrio,
@@ -610,9 +778,12 @@ def simular_negocio(datos: DatosSimulacion):
 async def obtener_consejo(datos: dict):
     try:
         genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+
         modelo = genai.GenerativeModel("gemini-3.5-flash")
+
         rol = datos.get("rol")
         metricas = datos.get("metricas", {})
+
         prompt = (
             f"Proyecto: {datos.get('idea')} (Sector: {datos.get('sector')}).\n"
             f"VAN: {metricas.get('van', 'N/A')}. "
@@ -638,8 +809,10 @@ async def obtener_consejo(datos: dict):
 
         respuesta = modelo.generate_content(prompt)
         return {"consejo": respuesta.text}
+
     except Exception as e:
         error_str = str(e)
+
         if "429" in error_str or "quota" in error_str.lower():
             return {
                 "consejo": (
@@ -647,6 +820,7 @@ async def obtener_consejo(datos: dict):
                     "Espera 60 segundos y vuelve a intentarlo."
                 )
             }
+
         return {"consejo": f"Error de conexión IA: {error_str}"}
 
 
@@ -654,9 +828,12 @@ async def obtener_consejo(datos: dict):
 async def chat_ia(datos: dict):
     try:
         genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+
         modelo = genai.GenerativeModel("gemini-3.5-flash")
+
         historial = datos.get("history", [])
         pregunta = datos.get("question", "")
+
         contexto = (
             f"Contexto del negocio: {datos.get('idea')} ({datos.get('sector')}). "
             f"ROI: {datos.get('metricas', {}).get('roi')}%. "
@@ -678,18 +855,27 @@ async def chat_ia(datos: dict):
 
         for msg in historial:
             rol = "user" if msg.get("role") == "user" else "model"
+
             mensajes.append(
-                {"role": rol, "parts": [{"text": msg.get("content", "")}]}
+                {
+                    "role": rol,
+                    "parts": [{"text": msg.get("content", "")}],
+                }
             )
 
         mensajes.append(
-            {"role": "user", "parts": [{"text": contexto + pregunta}]}
+            {
+                "role": "user",
+                "parts": [{"text": contexto + pregunta}],
+            }
         )
 
         respuesta = modelo.generate_content(mensajes)
         return {"respuesta": respuesta.text}
+
     except Exception as e:
         error_str = str(e)
+
         if "429" in error_str or "quota" in error_str.lower():
             return {
                 "respuesta": (
@@ -697,4 +883,5 @@ async def chat_ia(datos: dict):
                     "Espera 60 segundos antes de enviar otro mensaje."
                 )
             }
+
         return {"respuesta": f"Error en el chat: {error_str}"}
