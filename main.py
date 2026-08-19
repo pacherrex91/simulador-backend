@@ -128,10 +128,67 @@ def simular_negocio(datos: DatosSimulacion):
     inversion_total = sum(item.monto for item in inversion_items)
     gastos_fijos_base = sum(item.monto for item in gasto_items)
 
+        # --- DEPRECIACIÓN ECONÓMICA DE ACTIVOS ---
+    # Si un equipo no trae vida útil definida,
+    # usamos 60 meses y un residual del 10 %.
+    VIDA_UTIL_EQUIPOS_DEFAULT = 60
+    RESIDUAL_EQUIPOS_DEFAULT = 0.10
+
     depreciacion_mensual = 0.0
+    valor_activos_inicial = 0.0
+    valor_residual_activos_final = 0.0
+    valor_activos_mes_36 = 0.0
+
     for item in inversion_items:
-        if item.vida_util > 0:
-            depreciacion_mensual += (item.monto - item.residual) / item.vida_util
+        categoria = item.categoria.strip().lower()
+        es_equipo = "equipo" in categoria
+
+        vida_util_efectiva = item.vida_util
+        residual_efectivo = item.residual
+
+        # Las plantillas antiguas tienen Equipos con vida_util = 0.
+        # En ese caso aplicamos nuestros valores predeterminados.
+        if es_equipo and vida_util_efectiva <= 0:
+            vida_util_efectiva = VIDA_UTIL_EQUIPOS_DEFAULT
+
+            if residual_efectivo <= 0:
+                residual_efectivo = (
+                    item.monto * RESIDUAL_EQUIPOS_DEFAULT
+                )
+
+        # Solo se deprecian elementos que tengan vida útil.
+        # Insumos, empaques y permisos no se deprecian.
+        if vida_util_efectiva > 0:
+            residual_efectivo = max(
+                0.0,
+                min(float(residual_efectivo), float(item.monto)),
+            )
+
+            base_depreciable = max(
+                0.0,
+                float(item.monto) - residual_efectivo,
+            )
+
+            depreciacion_item = (
+                base_depreciable / vida_util_efectiva
+            )
+
+            depreciacion_mensual += depreciacion_item
+            valor_activos_inicial += float(item.monto)
+            valor_residual_activos_final += residual_efectivo
+
+            meses_depreciados = min(
+                36,
+                vida_util_efectiva,
+            )
+
+            valor_item_mes_36 = max(
+                residual_efectivo,
+                float(item.monto)
+                - (depreciacion_item * meses_depreciados),
+            )
+
+            valor_activos_mes_36 += valor_item_mes_36
 
     cuota_prestamo = 0.0
     tasa = datos.financiamiento_tasa_mensual / 100
@@ -324,7 +381,12 @@ def simular_negocio(datos: DatosSimulacion):
             cuota_mes = cuota_prestamo if mes <= plazo else 0
             flujo_caja = utilidad_neta + depreciacion_mensual - cuota_mes
 
-            flujo_neto_mensual.append(flujo_caja)
+                        # Valor terminal de los activos al finalizar el horizonte.
+            # Se reconoce una sola vez, en el mes 36.
+            if mes == 36:
+                flujo_caja += valor_activos_mes_36
+
+                flujo_neto_mensual.append(flujo_caja)
             caja_acumulada += flujo_caja
             caja_mensual.append(round(caja_acumulada, 2))
 
@@ -498,6 +560,11 @@ def simular_negocio(datos: DatosSimulacion):
     return {
         "metricas": {
             "inversion_total": round(inversion_total, 2),
+            "valor_activos_inicial": round(valor_activos_inicial, 2),
+            "vida_util_equipos_default": VIDA_UTIL_EQUIPOS_DEFAULT,
+            "valor_residual_activos_final": round(valor_residual_activos_final, 2),
+            "depreciacion_mensual": round(depreciacion_mensual, 2),
+            "valor_activos_mes_36": round(valor_activos_mes_36, 2),
             "gastos_fijos": round(gastos_fijos_base, 2),
             "margen_unitario": round(margen_unitario, 2),
             "punto_equilibrio": punto_equilibrio,
