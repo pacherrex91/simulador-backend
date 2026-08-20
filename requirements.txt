@@ -1,6 +1,6 @@
 fastapi
 uvicorn
 pydantic
-google-generativeai
 numpy-financial
 python-dotenv
+google-genai
